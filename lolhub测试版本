@@ -1,19 +1,677 @@
+-- 加载STX Notification UI（替换原library）
 local NotificationHolder = loadstring(game:HttpGet("https://raw.githubusercontent.com/BocusLuke/UI/main/STX/Module.Lua"))()
 local Notification = loadstring(game:HttpGet("https://raw.githubusercontent.com/BocusLuke/UI/main/STX/Client.Lua"))()
 
+-- 核心服务初始化（保持原有）
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local devv = require(game:GetService("ReplicatedStorage").devv)
+local Signal = devv.load("Signal")
+local item = devv.load('v3item')
+
+-- 全局变量初始化（保持原有）
+game.TextChatService.ChatWindowConfiguration.Enabled = true
+workspace.CurrentCamera.FieldOfView = 120
+
+-- 角色/状态变量
+local speed = 1
+local tpEnabled = true
+local heartbeatConnection = nil
+local character, humanoid = nil, nil
+local teleportLoop = nil
+local autoCollectConnections = {}
+local jumpConnection = nil
+local hitMOD = "meleepunch"
+local autokill = false
+local autostomp = false
+local grabplay = false
+local autoatm = false
+local autojia = false
+local autolok = false
+local autouse = false
+local autosell = false
+local autorem = false
+local autocl = false
+local antirea = false
+local antisit = false
+local jiahit = "Light Vest"
+local killoppEnabled = false
+local ignoreFriendsEnabled = false
+local tp666 = false
+local isTeleporting = false
+local selectedPlayer = nil
+local zDistance = 3
+local yDistance = 0
+local qtid = nil
+local b1 = require(game:GetService('ReplicatedStorage').devv).load('v3item').inventory.items
+
+-- 初始化通知（替换原UI窗口）
 Notification:Notify(
-    {Title = "TEXT TITLE", Description = "DESCRIPTION"},
-    {OutlineColor = Color3.fromRGB(80, 80, 80),Time = 5, Type = "option"},
-    {Image = "http://www.roblox.com/asset/?id=6023426923", ImageColor = Color3.fromRGB(255, 84, 84), Callback = function(State) print(tostring(State)) end}
+    {Title = "LOL Hub 加载成功", Description = "按快捷键启用功能，F1查看帮助"},
+    {OutlineColor = Color3.fromRGB(80, 80, 80), Time = 8, Type = "default"}
 )
-wait(1)
+
+-- 帮助通知（首次加载显示）
+wait(2)
 Notification:Notify(
-    {Title = "TEXT TITLE", Description = "DESCRIPTION"},
-    {OutlineColor = Color3.fromRGB(80, 80, 80),Time = 5, Type = "image"},
-    {Image = "http://www.roblox.com/asset/?id=6023426923", ImageColor = Color3.fromRGB(255, 84, 84)}
+    {Title = "功能快捷键", Description = "F2=透视ESP | F3=速度开关 | F4=连跳 | F5=杀戮光环 | F6=自动穿甲 | F7=自动回血"},
+    {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 10, Type = "image"},
+    {Image = "http://www.roblox.com/asset/?id=6023426923", ImageColor = Color3.fromRGB(80, 200, 80)}
 )
-wait(1)
-Notification:Notify(
-    {Title = "TEXT TITLE", Description = "DESCRIPTION"},
-    {OutlineColor = Color3.fromRGB(80, 80, 80),Time = 5, Type = "default"}
-)
+
+-- 原有工具函数（保持不变）
+local function isFriend(targetPlayer)
+    return LocalPlayer:IsFriendsWith(targetPlayer.UserId)
+end
+
+local function teleportBehindTarget(targetPlayer)
+    local targetCharacter = targetPlayer.Character
+    if not targetCharacter then return end
+    if targetCharacter:FindFirstChild('ForceField') or isFriend(targetPlayer) then return end
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local localCharacter = LocalPlayer.Character
+    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    if targetRoot and localRoot then
+        local behindCFrame = targetRoot.CFrame * CFrame.new(0,0,3)
+        localRoot.CFrame = behindCFrame
+    end
+end
+
+local function startTeleportLoop()
+    if teleportLoop then teleportLoop:Disconnect() end
+    teleportLoop = RunService.Heartbeat:Connect(function()
+        for _,player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                teleportBehindTarget(player)
+                task.wait(1)
+            end
+        end
+    end)
+    Notification:Notify(
+        {Title = "功能启用", Description = "自动传送功能已开启"},
+        {OutlineColor = Color3.fromRGB(80, 80, 80), Time = 3, Type = "default"}
+    )
+end
+
+local function stopTeleportLoop()
+    if teleportLoop then
+        teleportLoop:Disconnect()
+        teleportLoop = nil
+        Notification:Notify(
+            {Title = "功能关闭", Description = "自动传送功能已关闭"},
+            {OutlineColor = Color3.fromRGB(150, 80, 80), Time = 3, Type = "default"}
+        )
+    end
+end
+
+local function setupCharacter()
+    character = LocalPlayer.Character
+    if character then
+        humanoid = character:WaitForChild("Humanoid")
+        humanoid.Died:Connect(function()
+            repeat task.wait() until LocalPlayer.Character ~= nil
+            setupCharacter()
+            if tpEnabled then startTPWalk() end
+        end)
+    end
+end
+
+local function startTPWalk()
+    if heartbeatConnection then heartbeatConnection:Disconnect() end
+    heartbeatConnection = RunService.Heartbeat:Connect(function()
+        if not tpEnabled or not character or not humanoid or humanoid.Health <=0 then return end
+        if humanoid.MoveDirection.Magnitude > 0 then
+            local currentCFrame = character.PrimaryPart.CFrame
+            local newPosition = currentCFrame.Position + (humanoid.MoveDirection * speed)
+            character:SetPrimaryPartCFrame(CFrame.new(newPosition) * currentCFrame.Rotation)
+        end
+    end)
+end
+
+local function stopTPWalk()
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+        heartbeatConnection = nil
+    end
+end
+
+local function setupAutoCollect(toggleVar, itemNames, sizeFilter, toggleName)
+    return function(state)
+        toggleVar = state
+        if state then
+            if autoCollectConnections[toggleName] then autoCollectConnections[toggleName]:Disconnect() end
+            autoCollectConnections[toggleName] = RunService.Heartbeat:Connect(function()
+                local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+                if character and humanoidRootPart then
+                    local collected = false
+                    for _,item in pairs(workspace.Game.Entities.ItemPickup:GetChildren()) do
+                        for _,part in pairs(item:GetDescendants()) do
+                            if (part:IsA("MeshPart") or part:IsA("Part")) then
+                                local prompt = part:FindFirstChildOfClass("ProximityPrompt")
+                                if prompt then
+                                    local matchName = false
+                                    if type(itemNames) == "table" then
+                                        for _,name in pairs(itemNames) do
+                                            if prompt.ObjectText == name then
+                                                matchName = true
+                                                break
+                                            end
+                                        end
+                                    else
+                                        matchName = prompt.ObjectText == itemNames
+                                    end
+                                    local matchSize = true
+                                    if sizeFilter then
+                                        matchSize = part.Size == sizeFilter
+                                    end
+                                    if matchName and matchSize then
+                                        humanoidRootPart.CFrame = part.CFrame * CFrame.new(0,2,0)
+                                        task.wait(0.1)
+                                        for i=1,10 do
+                                            fireproximityprompt(prompt)
+                                            task.wait(0.1)
+                                        end
+                                        collected = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        if collected then break end
+                    end
+                    if collected then
+                        humanoidRootPart.CFrame = CFrame.new(1881.17371,-45.2568588,-183.409271)
+                    end
+                end
+            end)
+            Notification:Notify(
+                {Title = "自动收集", Description = toggleName.."已开启"},
+                {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 3, Type = "default"}
+            )
+        else
+            if autoCollectConnections[toggleName] then
+                autoCollectConnections[toggleName]:Disconnect()
+                autoCollectConnections[toggleName] = nil
+                Notification:Notify(
+                    {Title = "自动收集", Description = toggleName.."已关闭"},
+                    {OutlineColor = Color3.fromRGB(150, 80, 80), Time = 3, Type = "default"}
+                )
+            end
+        end
+    end
+end
+
+local function onCharacterAdded(character)
+    local humanoid = character:WaitForChild("Humanoid",10)
+    character:WaitForChild("HumanoidRootPart",10)
+    if humanoid then
+        humanoid.UseJumpPower = true
+    end
+end
+
+-- 封禁信息查询（用通知显示）
+local function fmt(ts)
+    return os.date("%Y-%m-%d %H:%M:%S",ts)
+end
+
+local function checkBanInfo()
+    local banReason = nil
+    local banCount = nil
+    local isBanned = false
+    local banAt = nil
+    local unbanAt = nil
+    local remainingTime = nil
+    for _,entry in ipairs(getgc(true)) do
+        if type(entry) == "table" then
+            local reason = rawget(entry,"shadowbanned")
+            if reason then
+                banReason = reason
+                isBanned = true
+            end
+            local count = rawget(entry,"numshadowbans")
+            if count then
+                banCount = tostring(count)
+                isBanned = true
+            end
+            local at = rawget(entry,"shadowbannedAt")
+            if at then banAt = fmt(at) end
+            local exes = rawget(entry,"shadowbannedExpires")
+            if exes then
+                unbanAt = fmt(exes)
+                local now = os.time()
+                local rem = exes - now
+                if rem > 0 then
+                    local d = math.floor(rem/86400); rem=rem%86400
+                    local h = math.floor(rem/3600); rem=rem%3600
+                    local m = math.floor(rem/60); rem=rem%60
+                    local s = rem
+                    remainingTime = string.format("%d天 %d小时 %d分 %d秒",d,h,m,s)
+                else
+                    remainingTime = "已过期"
+                end
+            end
+        end
+    end
+    -- 显示封禁信息通知
+    local banTitle = isBanned and "账号已封禁" or "账号正常"
+    local banDesc = string.format(
+        "原因：%s\n次数：%s\n封禁时间：%s\n解封时间：%s\n剩余时间：%s",
+        banReason or "无",
+        banCount or "无",
+        banAt or "无",
+        unbanAt or "无",
+        remainingTime or "无"
+    )
+    Notification:Notify(
+        {Title = banTitle, Description = banDesc},
+        {OutlineColor = isBanned and Color3.fromRGB(200,80,80) or Color3.fromRGB(80,200,80), Time = 10, Type = "image"},
+        {Image = "http://www.roblox.com/asset/?id=6023426923", ImageColor = isBanned and Color3.fromRGB(255,84,84) or Color3.fromRGB(84,255,84)}
+    )
+end
+
+-- 透视ESP功能（快捷键触发）
+local function toggleESP()
+    local isESPEnabled = false
+    local playerConnections = {}
+    return function()
+        isESPEnabled = not isESPEnabled
+        if isESPEnabled then
+            Notification:Notify(
+                {Title = "透视ESP", Description = "已开启玩家透视和信息显示"},
+                {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 3, Type = "default"}
+            )
+            local LocalCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local LocalHead = LocalCharacter:WaitForChild("Head")
+            local function updateNametag(player, textLabel, head)
+                local character = player.Character
+                if not character then return end
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                local targetHead = character:FindFirstChild("Head")
+                if humanoid and targetHead and humanoid.Health > 0 then
+                    local distance = (LocalHead.Position - targetHead.Position).Magnitude
+                    textLabel.Text = string.format("%s\n血量: %d/%d\n距离: %.1fm",player.Name,math.floor(humanoid.Health),math.floor(humanoid.MaxHealth),distance)
+                    textLabel.Visible = true
+                else
+                    textLabel.Visible = false
+                end
+            end
+            local function createNametag(player)
+                if player == LocalPlayer then return end
+                playerConnections[player] = {}
+                local function setupCharacter(character)
+                    local head = character:WaitForChild("Head")
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "PlayerNametag"
+                    billboard.Adornee = head
+                    billboard.Size = UDim2.new(0,200,0,80)
+                    billboard.StudsOffset = Vector3.new(0,3,0)
+                    billboard.AlwaysOnTop = true
+                    billboard.Parent = head
+                    local textLabel = Instance.new("TextLabel")
+                    textLabel.Size = UDim2.new(1,0,1,0)
+                    textLabel.Font = Enum.Font.GothamBold
+                    textLabel.TextSize = 8
+                    textLabel.TextColor3 = Color3.new(1,0,0)
+                    textLabel.TextStrokeColor3 = Color3.new(0,0,0)
+                    textLabel.TextStrokeTransparency = 0.3
+                    textLabel.BackgroundTransparency = 1
+                    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+                    textLabel.Parent = billboard
+                    local heartbeatConn = RunService.Heartbeat:Connect(function()
+                        if not character or not character.Parent then
+                            heartbeatConn:Disconnect()
+                            return
+                        end
+                        updateNametag(player, textLabel, head)
+                    end)
+                    table.insert(playerConnections[player], heartbeatConn)
+                    local characterRemovedConn = character.AncestryChanged:Connect(function(_,parent)
+                        if parent == nil then
+                            billboard:Destroy()
+                            heartbeatConn:Disconnect()
+                            characterRemovedConn:Disconnect()
+                        end
+                    end)
+                    table.insert(playerConnections[player], characterRemovedConn)
+                end
+                if player.Character then setupCharacter(player.Character) end
+                local charAddedConn = player.CharacterAdded:Connect(setupCharacter)
+                table.insert(playerConnections[player], charAddedConn)
+            end
+            local function removeNametag(player)
+                if playerConnections[player] then
+                    for _,conn in ipairs(playerConnections[player]) do
+                        conn:Disconnect()
+                    end
+                    playerConnections[player] = nil
+                end
+                if player.Character then
+                    local head = player.Character:FindFirstChild("Head")
+                    if head then
+                        local nametag = head:FindFirstChild("PlayerNametag")
+                        if nametag then nametag:Destroy() end
+                    end
+                end
+            end
+            Players.PlayerAdded:Connect(function(player)
+                createNametag(player)
+                local leavingConn = player.AncestryChanged:Connect(function(_,parent)
+                    if parent == nil then
+                        removeNametag(player)
+                        leavingConn:Disconnect()
+                    end
+                end)
+            end)
+            for _,player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    createNametag(player)
+                    local leavingConn = player.AncestryChanged:Connect(function(_,parent)
+                        if parent == nil then
+                            removeNametag(player)
+                            leavingConn:Disconnect()
+                        end
+                    end)
+                end
+            end
+            LocalPlayer.CharacterAdded:Connect(function(character)
+                LocalCharacter = character
+                LocalHead = character:WaitForChild("Head")
+            end)
+        else
+            Notification:Notify(
+                {Title = "透视ESP", Description = "已关闭"},
+                {OutlineColor = Color3.fromRGB(150, 80, 80), Time = 3, Type = "default"}
+            )
+            for _,player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    local head = player.Character and player.Character:FindFirstChild("Head")
+                    if head then
+                        local nametag = head:FindFirstChild("PlayerNametag")
+                        if nametag then nametag:Destroy() end
+                    end
+                end
+            end
+            for _,conns in pairs(playerConnections) do
+                for _,conn in ipairs(conns) do
+                    conn:Disconnect()
+                end
+            end
+            playerConnections = {}
+        end
+    end
+end
+
+-- 快捷键绑定（替换原UI按钮）
+local ESPToggle = toggleESP()
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    -- F1：查看封禁信息
+    if input.KeyCode == Enum.KeyCode.F1 then
+        checkBanInfo()
+    end
+    -- F2：透视ESP
+    if input.KeyCode == Enum.KeyCode.F2 then
+        ESPToggle()
+    end
+    -- F3：速度开关
+    if input.KeyCode == Enum.KeyCode.F3 then
+        tpEnabled = not tpEnabled
+        if tpEnabled then
+            startTPWalk()
+            Notification:Notify(
+                {Title = "速度开关", Description = "已开启（当前速度："..speed.."）"},
+                {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 3, Type = "default"}
+            )
+        else
+            stopTPWalk()
+            Notification:Notify(
+                {Title = "速度开关", Description = "已关闭"},
+                {OutlineColor = Color3.fromRGB(150, 80, 80), Time = 3, Type = "default"}
+            )
+        end
+    end
+    -- F4：连跳
+    if input.KeyCode == Enum.KeyCode.F4 then
+        local isJumpEnabled = not (jumpConnection and jumpConnection.Connected)
+        if isJumpEnabled then
+            jumpConnection = UserInputService.JumpRequest:Connect(function()
+                if humanoid and humanoid.Health > 0 then
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end)
+            Notification:Notify(
+                {Title = "连跳", Description = "已开启"},
+                {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 3, Type = "default"}
+            )
+        else
+            if jumpConnection then
+                jumpConnection:Disconnect()
+                jumpConnection = nil
+                Notification:Notify(
+                    {Title = "连跳", Description = "已关闭"},
+                    {OutlineColor = Color3.fromRGB(150, 80, 80), Time = 3, Type = "default"}
+                )
+            end
+        end
+    end
+    -- F5：杀戮光环
+    if input.KeyCode == Enum.KeyCode.F5 then
+        autokill = not autokill
+        Notification:Notify(
+            {Title = "杀戮光环", Description = autokill and "已开启" or "已关闭"},
+            {OutlineColor = autokill and Color3.fromRGB(200,80,80) or Color3.fromRGB(150,80,80), Time = 3, Type = "default"}
+        )
+    end
+    -- F6：自动穿甲
+    if input.KeyCode == Enum.KeyCode.F6 then
+        autojia = not autojia
+        Notification:Notify(
+            {Title = "自动穿甲", Description = autojia and "已开启（当前护甲："..jiahit.."）" or "已关闭"},
+            {OutlineColor = autojia and Color3.fromRGB(80, 150, 80) or Color3.fromRGB(150,80,80), Time = 3, Type = "default"}
+        )
+    end
+    -- F7：自动回血
+    if input.KeyCode == Enum.KeyCode.F7 then
+        autolok = not autolok
+        Notification:Notify(
+            {Title = "自动回血", Description = autolok and "已开启" or "已关闭"},
+            {OutlineColor = autolok and Color3.fromRGB(80, 150, 80) or Color3.fromRGB(150,80,80), Time = 3, Type = "default"}
+        )
+    end
+    -- 滚轮：调整速度
+    if input.UserInputType == Enum.UserInputType.MouseWheel then
+        if input.Position.Z > 0 then
+            speed = math.min(speed + 1, 15)
+            Notification:Notify(
+                {Title = "速度调整", Description = "当前速度："..speed},
+                {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 2, Type = "default"}
+            )
+        else
+            speed = math.max(speed - 1, 1)
+            Notification:Notify(
+                {Title = "速度调整", Description = "当前速度："..speed},
+                {OutlineColor = Color3.fromRGB(80, 150, 80), Time = 2, Type = "default"}
+            )
+        end
+    end
+end)
+
+-- 原有初始化逻辑（保持不变）
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    setupCharacter()
+end)
+setupCharacter()
+
+-- 战斗核心循环（保持原有）
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        if tp666 then
+            if tp666 and selectedPlayer then
+                spawn(function()
+                    local localPlayer = game:GetService("Players").LocalPlayer
+                    local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+                    local humanoid = character:WaitForChild("Humanoid")
+                    local radius = 5
+                    local heightOffset = 0
+                    local angle = 0
+                    local rotationSpeed = 0.8
+                    while tp666 and selectedPlayer and selectedPlayer.Character do
+                        local targetChar = selectedPlayer.Character
+                        local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                        local localRoot = character:FindFirstChild("HumanoidRootPart")
+                        if targetRoot and localRoot and targetChar:FindFirstChild("Humanoid") and targetChar.Humanoid.Health > 0 and humanoid.Health > 0 then
+                            angle = angle + rotationSpeed
+                            if angle > 2 * math.pi then angle = 0 end
+                            local x = math.cos(angle) * radius
+                            local z = math.sin(angle) * radius
+                            local offset = Vector3.new(x, heightOffset, z)
+                            localRoot.CFrame = CFrame.new(targetRoot.Position + offset, targetRoot.Position)
+                            humanoid.AutoRotate = false
+                        else
+                            if not (targetChar and targetChar:FindFirstChild("Humanoid") and targetChar.Humanoid.Health > 0) then
+                                humanoid.AutoRotate = true
+                                break
+                            end
+                        end
+                        wait()
+                    end
+                    humanoid.AutoRotate = true
+                end)
+            end
+        end
+        if isTeleporting then
+            if isTeleporting and selectedPlayer then
+                spawn(function()
+                    local localPlayer = game:GetService("Players").LocalPlayer
+                    local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+                    local humanoid = character:WaitForChild("Humanoid")
+                    while isTeleporting and selectedPlayer and selectedPlayer.Character do
+                        local targetChar = selectedPlayer.Character
+                        local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                        local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+                        local localRoot = character:FindFirstChild("HumanoidRootPart")
+                        if targetRoot and localRoot then
+                            local targetCFrame = targetRoot.CFrame
+                            local offset = targetCFrame.LookVector * -zDistance + Vector3.new(0, yDistance, 0)
+                            localRoot.CFrame = targetCFrame + offset
+                        end
+                        wait()
+                    end
+                end)
+            end
+        end
+        for i, v in next, b1 do
+            if v.name == 'Fists' then
+                qtid = v.guid
+                break
+            end
+        end
+        if autokill then
+            local Players = game:GetService("Players")
+            local localPlayer = Players.LocalPlayer
+            local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+            local rootPart = character:WaitForChild("HumanoidRootPart")
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= localPlayer and player.Character then
+                    local targetChar = player.Character
+                    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+                    if targetHRP and targetHumanoid and targetHumanoid.Health > 0 then
+                        local distance = (rootPart.Position - targetHRP.Position).Magnitude
+                        if distance <= 40 then
+                            local uid = player.UserId
+                            require(game:GetService("ReplicatedStorage").devv).load("Signal").FireServer("equip", qtid)
+                            require(game:GetService("ReplicatedStorage").devv).load("Signal").FireServer("meleeItemHit", "player", { hitPlayerId = uid, meleeType = hitMOD })
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if autostomp then
+            local Players = game:GetService("Players")
+            local localPlayer = Players.LocalPlayer
+            local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+            local rootPart = character:WaitForChild("HumanoidRootPart")
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= localPlayer and player.Character then
+                    local targetChar = player.Character
+                    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+                    if targetHRP and targetHumanoid and targetHumanoid.Health < 20 then
+                        local distance = (rootPart.Position - targetHRP.Position).Magnitude
+                        if distance <= 40 then
+                            local uid = player.UserId
+                            Signal.FireServer("stomp", player)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if grabplay then
+            local Players = game:GetService("Players")
+            local localPlayer = Players.LocalPlayer
+            local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+            local rootPart = character:WaitForChild("HumanoidRootPart")
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= localPlayer and player.Character then
+                    local targetChar = player.Character
+                    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+                    if targetHRP and targetHumanoid and targetHumanoid.Health < 20 then
+                        local distance = (rootPart.Position - targetHRP.Position).Magnitude
+                        if distance <= 40 then
+                            local uid = player.UserId
+                            Signal.FireServer("grabPlayer", player)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if autoatm then
+            local player = game:GetService("Players").LocalPlayer
+            local character = player.Character or player.CharacterAdded:Wait()
+            local rootPart = character:WaitForChild("HumanoidRootPart")
+            for _,v in pairs(workspace.Game.Entities.CashBundle:GetDescendants()) do
+                if v:IsA("ClickDetector") then
+                    local detectorPos = v.Parent:GetPivot().Position
+                    local distance = (rootPart.Position - detectorPos).Magnitude
+                    if distance <=35 then
+                        fireclickdetector(v)
+                    end
+                end
+            end
+            for _, v in ipairs(workspace.Game.Props.ATM:GetChildren()) do
+                if v:IsA("Model") and (v:GetAttribute("health") or 0) > 0 then
+                    if localPlayer.Character and localPlayer.Character:FindFirstChild("Humanoid") then
+                        local rootPart = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if rootPart then
+                            currentATM = v
+                            ATMguid = currentATM:GetAttribute("guid")
+                            local pos = currentATM.WorldPivot.Position
+                            local Players = game:GetService('Players')
+                            local LocalPlayer = Players.LocalPlayer
+                            local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                            local Humanoid = Character:WaitForChild('Humanoid')
+                            if Humanoid then
+                                local HumanoidRootPart = Character:WaitForChild('HumanoidRootPart')
+                                if HumanoidRootPart then
+                                    HumanoidRootPart.CFrame = CFrame.new(pos.x, pos.y, pos.z)
+                                    for i, v in next, item.inventory.items do
+                                        if v.name == 'Fists' then
+                                            qtid = v.guid
+                                            break
+                                        end
+                                    end
+                                    local distance = (HumanoidRootPart
