@@ -30,22 +30,20 @@ local Tooltips = {}
 
 local function GetPixelFont()
     -- Pixel Cyberpunk Style Font
-    local PixelFonts = {
-        "Press Start 2P",
-        "Pixelify Sans", 
-        "GothamBold",
-        "Gotham",
-        "SourceSansBold",
-    }
-
-    for _, FontName in ipairs(PixelFonts) do
-        local Ok, FontObj = pcall(Font.fromName, FontName)
-        if Ok then
-            return FontObj
+    -- Use Roblox built-in monospace font for pixel/terminal feel
+    local Ok, FontObj = pcall(Font.fromEnum, Enum.Font.Code)
+    if Ok then
+        return FontObj
+    end
+    -- Fallback chain
+    local Fallbacks = {Enum.Font.GothamBold, Enum.Font.SourceSansBold, Enum.Font.Gotham}
+    for _, Fallback in ipairs(Fallbacks) do
+        local Ok2, FontObj2 = pcall(Font.fromEnum, Fallback)
+        if Ok2 then
+            return FontObj2
         end
     end
-
-    return Font.fromEnum(Enum.Font.GothamBold)
+    return Font.fromEnum(Enum.Font.SourceSans)
 end
 
 local BaseURL = "https://raw.githubusercontent.com/deividcomsono/Obsidian/refs/heads/main/"
@@ -1495,8 +1493,18 @@ function Library:GetTextBounds(Text: string, Font: Font, Size: number, Width: nu
     Params.Size = Size
     Params.Width = Width or workspace.CurrentCamera.ViewportSize.X - 32
 
-    local Bounds = TextService:GetTextBoundsAsync(Params)
-    return Bounds.X, Bounds.Y
+    -- PIXEL FIX: pcall保护防止字体问题导致崩溃
+    local Success, Bounds = pcall(function()
+        return TextService:GetTextBoundsAsync(Params)
+    end)
+
+    if Success and Bounds then
+        return Bounds.X, Bounds.Y
+    end
+
+    -- Fallback: estimate text size
+    local EstimateWidth = #Text * Size * 0.6
+    return EstimateWidth, Size + 4
 end
 
 function Library:MouseIsOverFrame(Frame: GuiObject, Mouse: Vector2): boolean
